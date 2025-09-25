@@ -1,0 +1,33 @@
+name: churn-analysis
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.9
+  - pandas=1.5.3
+  - numpy=1.24.0
+  - scikit-learn=1.3.0
+  - xgboost=1.7.0
+  - lightgbm=4.0.0
+  - matplotlib=3.7.0
+  - seaborn=0.12.0
+  - plotly=5.15.0
+  - jupyter=1.0.0
+  - notebook=6.5.0
+  - ipywidgets=8.0.0
+  - shap=0.42.0
+  - streamlit=1.28.0
+  - pytest=7.4.0
+  - black=23.7.0
+  - pip
+  - pip:
+    - dowhy==0.9.0
+    - causal-learn==0.1.3.5
+    - econml==0.14.0
+    - lime==0.2.0
+    - streamlit-option-menu==0.3.6
+    - streamlit-aggrid==0.3.4
+    - pyyaml==6.0
+    - python-dotenv==1.0.0
+    - feature-engine==1.6.0
+    - category-encoders==2.6.0

@@ -1,95 +1,163 @@
 import shap
-import matplotlib.pyplot as plt
-import joblib
-import numpy as np
 import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
 import seaborn as sns
-from pathlib import Path
-from sklearn.metrics import confusion_matrix, classification_report
+from typing import Dict, Any, List, Optional  # Added imports
+import logging
+import joblib
 
-def explain_model(model, X_test, feature_names, model_type='tree'):
-    """Generate SHAP explanations"""
-    results_dir = Path('../results')
-    results_dir.mkdir(exist_ok=True)
+logger = logging.getLogger(__name__)
+
+class SHAPExplainer:
+    """Handles SHAP explanations for model interpretability"""
     
-    try:
-        X_test_array = X_test.values.astype(np.float32)
-        if model_type == 'tree':
-            explainer = shap.TreeExplainer(model)
-            shap_values = explainer.shap_values(X_test_array)
+    def __init__(self, model, preprocessor, feature_names: List[str]):
+        self.model = model
+        self.preprocessor = preprocessor
+        self.feature_names = feature_names
+        self.explainer = None
+        self.shap_values = None
+        
+    def create_explainer(self, X: pd.DataFrame, sample_size: int = 1000):
+        """Create SHAP explainer"""
+        # Sample data for faster computation
+        if len(X) > sample_size:
+            X_sample = X.sample(sample_size, random_state=42)
         else:
-            explainer = shap.LinearExplainer(model, X_test_array)
-            shap_values = explainer.shap_values(X_test_array)
-
-        # Create summary plot
+            X_sample = X
+        
+        # Create explainer based on model type
+        if hasattr(self.model, 'predict_proba'):
+            try:
+                self.explainer = shap.TreeExplainer(self.model)
+                self.shap_values = self.explainer.shap_values(X_sample)
+            except:
+                # Fallback to KernelExplainer for non-tree models
+                self.explainer = shap.KernelExplainer(self.model.predict_proba, X_sample)
+                self.shap_values = self.explainer.shap_values(X_sample)
+        else:
+            self.explainer = shap.KernelExplainer(self.model.predict, X_sample)
+            self.shap_values = self.explainer.shap_values(X_sample)
+        
+        logger.info("SHAP explainer created successfully")
+        return self.explainer, self.shap_values
+    
+    def summary_plot(self, X: pd.DataFrame, plot_type: str = "dot", 
+                    max_display: int = 20, show: bool = True):
+        """Create SHAP summary plot"""
+        if self.shap_values is None:
+            self.create_explainer(X)
+        
         plt.figure(figsize=(10, 8))
-        if isinstance(shap_values, list):
-            shap_values = shap_values[1]  # For binary classification
-
-        shap.summary_plot(shap_values, X_test_array, feature_names=feature_names, show=False)
+        
+        # Handle binary classification
+        if isinstance(self.shap_values, list) and len(self.shap_values) == 2:
+            shap_values_plot = self.shap_values[1]  # Use class 1 (positive class)
+        else:
+            shap_values_plot = self.shap_values
+        
+        shap.summary_plot(shap_values_plot, X, 
+                         feature_names=self.feature_names,
+                         plot_type=plot_type,
+                         max_display=max_display,
+                         show=show)
+        
         plt.tight_layout()
-        plt.savefig(results_dir / 'shap_summary.png', dpi=300, bbox_inches='tight')
-        plt.close()
-
-        return explainer, shap_values
-
-    except Exception as e:
-        print(f"SHAP explanation failed: {e}")
-        return None, None
-
-def plot_feature_importance(shap_values, feature_names):
-    """Plot feature importance"""
-    if shap_values is None:
-        return None
+        return plt.gcf()
     
-    importance = np.abs(shap_values).mean(axis=0)
-    importance_df = pd.DataFrame({
-        'feature': feature_names,
-        'importance': importance
-    }).sort_values('importance', ascending=False)
+    def force_plot(self, instance_idx: int, X: pd.DataFrame, 
+                  expected_value: float = None, show: bool = True):
+        """Create individual force plot"""
+        if self.shap_values is None:
+            self.create_explainer(X)
+        
+        if expected_value is None and self.explainer is not None:
+            expected_value = self.explainer.expected_value
+        
+        # Handle binary classification
+        if isinstance(self.shap_values, list) and len(self.shap_values) == 2:
+            shap_values_plot = self.shap_values[1]
+        else:
+            shap_values_plot = self.shap_values
+        
+        plt.figure(figsize=(12, 4))
+        shap.force_plot(expected_value, 
+                       shap_values_plot[instance_idx, :], 
+                       X.iloc[instance_idx, :],
+                       feature_names=self.feature_names,
+                       matplotlib=True,
+                       show=show)
+        
+        return plt.gcf()
     
-    plt.figure(figsize=(12, 8))
-    sns.barplot(x='importance', y='feature', data=importance_df.head(15))
-    plt.title('Feature Importance from SHAP')
-    plt.tight_layout()
-    plt.savefig('../results/feature_importance.png', dpi=300, bbox_inches='tight')
-    plt.close()
+    def dependence_plot(self, feature_name: str, X: pd.DataFrame, 
+                       interaction_index: str = None, show: bool = True):
+        """Create dependence plot for a specific feature"""
+        if self.shap_values is None:
+            self.create_explainer(X)
+        
+        # Handle binary classification
+        if isinstance(self.shap_values, list) and len(self.shap_values) == 2:
+            shap_values_plot = self.shap_values[1]
+        else:
+            shap_values_plot = self.shap_values
+        
+        feature_idx = list(X.columns).index(feature_name) if feature_name in X.columns else None
+        
+        if feature_idx is not None:
+            plt.figure(figsize=(10, 6))
+            shap.dependence_plot(feature_idx, shap_values_plot, X, 
+                               feature_names=self.feature_names,
+                               interaction_index=interaction_index,
+                               show=show)
+            
+            return plt.gcf()
+        else:
+            logger.warning(f"Feature {feature_name} not found in dataset")
+            return None
     
-    return importance_df
-
-def plot_confusion_matrix(model, X_test, y_test):
-    """Plot and save confusion matrix and classification report"""
-    results_dir = Path('../results')
-    results_dir.mkdir(exist_ok=True)
-
-    y_pred = model.predict(X_test)
-    cm = confusion_matrix(y_test, y_pred)
-    cr = classification_report(y_test, y_pred, output_dict=True)
-
-    plt.figure(figsize=(6, 5))
-    sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', cbar=False)
-    plt.xlabel('Predicted')
-    plt.ylabel('Actual')
-    plt.title('Confusion Matrix')
-    plt.tight_layout()
-    plt.savefig(results_dir / 'confusion_matrix.png', dpi=300)
-    plt.close()
-
-    # Save classification report as CSV
-    cr_df = pd.DataFrame(cr).transpose()
-    cr_df.to_csv(results_dir / 'classification_report.csv')
-
-    return cr_df
-
-def plot_feature_distributions(df, features):
-    """Plot and save feature distributions for given features"""
-    results_dir = Path('../results')
-    results_dir.mkdir(exist_ok=True)
-
-    for feature in features:
-        plt.figure(figsize=(8, 6))
-        sns.histplot(data=df, x=feature, hue='Churn', multiple='stack', palette='Set2', kde=True)
-        plt.title(f'Distribution of {feature} by Churn')
-        plt.tight_layout()
-        plt.savefig(results_dir / f'feature_distribution_{feature}.png', dpi=300)
-        plt.close()
+    def get_feature_importance(self, X: pd.DataFrame) -> pd.DataFrame:
+        """Get feature importance from SHAP values"""
+        if self.shap_values is None:
+            self.create_explainer(X)
+        
+        # Handle binary classification
+        if isinstance(self.shap_values, list) and len(self.shap_values) == 2:
+            shap_values_plot = self.shap_values[1]
+        else:
+            shap_values_plot = self.shap_values
+        
+        # Calculate mean absolute SHAP values
+        shap_importance = np.abs(shap_values_plot).mean(axis=0)
+        
+        importance_df = pd.DataFrame({
+            'feature': self.feature_names,
+            'shap_importance': shap_importance
+        }).sort_values('shap_importance', ascending=False)
+        
+        return importance_df
+    
+    def create_waterfall_plot(self, instance_idx: int, X: pd.DataFrame, 
+                            max_display: int = 10, show: bool = True):
+        """Create waterfall plot for individual prediction"""
+        if self.shap_values is None:
+            self.create_explainer(X)
+        
+        # Handle binary classification
+        if isinstance(self.shap_values, list) and len(self.shap_values) == 2:
+            shap_values_plot = self.shap_values[1]
+            expected_value = self.explainer.expected_value[1]
+        else:
+            shap_values_plot = self.shap_values
+            expected_value = self.explainer.expected_value
+        
+        plt.figure(figsize=(10, 8))
+        shap.waterfall_plot(shap.Explanation(values=shap_values_plot[instance_idx],
+                                           base_values=expected_value,
+                                           data=X.iloc[instance_idx],
+                                           feature_names=self.feature_names),
+                          max_display=max_display,
+                          show=show)
+        
+        return plt.gcf()

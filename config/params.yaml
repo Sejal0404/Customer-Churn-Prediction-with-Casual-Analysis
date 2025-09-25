@@ -1,0 +1,68 @@
+data:
+  raw_file: "data/raw/Customer_Churn_Prediction_Dataset.csv"
+  target_column: "Churn"
+  test_size: 0.2
+  random_state: 42
+  categorical_features:
+    - "gender"
+    - "SeniorCitizen"
+    - "Partner"
+    - "Dependents"
+    - "PhoneService"
+    - "MultipleLines"
+    - "InternetService"
+    - "OnlineSecurity"
+    - "OnlineBackup"
+    - "DeviceProtection"
+    - "TechSupport"
+    - "StreamingTV"
+    - "StreamingMovies"
+    - "Contract"
+    - "PaperlessBilling"
+    - "PaymentMethod"
+  numeric_features:
+    - "tenure"
+    - "MonthlyCharges"
+    - "TotalCharges"
+
+preprocessing:
+  missing_value_strategy: "drop"
+  scaling_method: "StandardScaler"
+  encoding_method: "OneHotEncoder"
+
+models:
+  algorithms: 
+    - "RandomForest"
+    - "XGBoost"
+    - "LightGBM"
+  cross_validation: 5
+  optimization: "roc_auc"
+  hyperparameters:
+    RandomForest:
+      n_estimators: [100, 200]
+      max_depth: [10, 20]
+      min_samples_split: [2, 5]
+    XGBoost:
+      n_estimators: [100, 200]
+      max_depth: [3, 6]
+      learning_rate: [0.01, 0.1]
+    LightGBM:
+      n_estimators: [100, 200]
+      max_depth: [3, 6]
+      learning_rate: [0.01, 0.1]
+
+explainability:
+  shap_samples: 100
+  feature_importance_threshold: 0.01
+
+causal_analysis:
+  treatment_variables: 
+    - "Contract"
+    - "PaymentMethod"
+    - "InternetService"
+  outcome: "Churn"
+  confounders: 
+    - "tenure"
+    - "MonthlyCharges"
+    - "SeniorCitizen"
+    - "Partner"
