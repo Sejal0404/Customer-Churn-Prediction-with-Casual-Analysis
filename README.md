@@ -1,4 +1,4 @@
-# Customer Churn Causal Analysis
+# Customer Churn Casual Analysis
 
 A comprehensive machine learning project that predicts customer churn using advanced causal analysis techniques and provides an interactive Streamlit dashboard for business insights.
 
